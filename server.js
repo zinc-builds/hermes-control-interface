@@ -426,7 +426,11 @@ function getProjects() {
 
 function parseHermesSessionsList(raw) {
   const lines = String(raw || '').split(/\r?\n/).map((line) => line.trimEnd()).filter(Boolean);
-  const dataLines = lines.filter((line) => !/^Title\s+Preview\s+Last Active\s+ID$/i.test(line) && !/^[─\-]+$/.test(line));
+  const dataLines = lines.filter((line) =>
+    !/^Title\s+Preview\s+Last Active\s+ID$/i.test(line) &&
+    !/^[─\-]+$/.test(line) &&
+    !/^(Preview|Title|Last Active|Src)\s+(Preview|Title|Last Active|Src)/i.test(line)
+  );
   return dataLines.map((line) => {
     const parts = line.trim().split(/\s{2,}/);
     if (parts.length < 4) return null;

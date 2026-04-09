@@ -990,6 +990,7 @@ function renderSnapshot(snapshot) {
   if (els.terminalPrompt) els.terminalPrompt.textContent = snapshot.terminal?.prompt || `${snapshot.loginIdentity || 'root@hermes'}:${snapshot.terminal?.cwd || snapshot.workingDir || '/'}#`;
 
   renderSidebarAgent(snapshot);
+  renderSessions(snapshot);
   renderQuickActions(snapshot);
   if (els.systemPanel) renderSystem(snapshot);
   if (els.cronPanel) renderCron(snapshot);
