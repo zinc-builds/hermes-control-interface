@@ -66,6 +66,7 @@ const els = {
   projectsList: null, // removed - projects sidebar gone
   sessionsList: $('#sessions-list'),
   quickActions: $('#quick-actions'),
+  agentList: $('#agent-list'),
   terminalOutput: $('#terminal-output'),
   terminalForm: $('#terminal-form'),
   terminalInput: $('#terminal-input'),
@@ -591,6 +592,52 @@ function renderQuickActions(snapshot) {
     els.quickActions.appendChild(btn);
   });
 }
+
+function renderAgentList(snapshot) {
+  const profiles = snapshot.profiles || [];
+  if (!profiles.length) {
+    els.agentList.innerHTML = '<div class="agent-empty">No profiles found</div>';
+    return;
+  }
+  els.agentList.innerHTML = profiles.map((p) => {
+    const running = p.gateway === 'running';
+    const statusClass = running ? 'running' : 'stopped';
+    const activeClass = p.active ? 'active-profile' : '';
+    const modelName = p.model.length > 22 ? p.model.slice(0, 20) + '…' : p.model;
+    const toggleLabel = running ? 'stop' : 'start';
+    const toggleAction = running ? 'stop' : 'start';
+    return `
+      <div class="agent-item ${activeClass}" data-profile="${escapeHtml(p.name)}">
+        <div class="agent-row">
+          <span class="agent-dot ${statusClass}"></span>
+          <span class="agent-name">${escapeHtml(p.name)}</span>
+          ${p.active ? '<span class="agent-badge">active</span>' : ''}
+        </div>
+        <div class="agent-meta">
+          <span class="agent-model">${escapeHtml(modelName)}</span>
+          <button class="gw-toggle ${statusClass}" onclick="toggleGateway('${escapeHtml(p.name)}','${toggleAction}')" title="gateway ${toggleLabel}">${toggleLabel}</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+window.toggleGateway = async function(profile, action) {
+  try {
+    const res = await fetch(`/api/gateway/${profile}/${action}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const data = await res.json();
+    if (data.ok) {
+      // Refresh dashboard to update gateway status
+      loadState();
+    } else {
+      console.error('Gateway toggle failed:', data);
+    }
+  } catch (e) {
+    console.error('Gateway toggle error:', e);
+  }
+};
 
 function renderSystem(snapshot) {
   const s = snapshot.system || {};
@@ -1154,6 +1201,7 @@ function renderSnapshot(snapshot) {
   // Only re-render panels if their data actually changed
   if (snapshotDataChanged(prev, snapshot, 'sessions')) renderSessions(snapshot);
   renderQuickActions(snapshot);
+  if (snapshotDataChanged(prev, snapshot, 'profiles')) renderAgentList(snapshot);
   if (els.systemPanel && snapshotDataChanged(prev, snapshot, 'system')) renderSystem(snapshot);
   if (els.cronPanel && snapshotDataChanged(prev, snapshot, 'cronJobs')) renderCron(snapshot);
   if (els.tokensPanel && snapshotDataChanged(prev, snapshot, 'tokens')) renderTokens(snapshot);

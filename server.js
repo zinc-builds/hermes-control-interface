@@ -948,12 +948,13 @@ function buildSpriteState() {
 
 async function buildDashboardState(authed = false) {
   const terminal = ensureTerminalSession();
-  const [sessionsData, allSessionsData, cronJobsData, insightsData, knowledgeData] = await Promise.all([
+  const [sessionsData, allSessionsData, cronJobsData, insightsData, knowledgeData, profilesData] = await Promise.all([
     getSessions(),
     getAllSessions(),
     getCronJobs(),
     getInsights(),
     buildKnowledgeMarkdown(),
+    getProfiles(),
   ]);
   return {
     title: 'Hermes Control Interface',
@@ -966,6 +967,7 @@ async function buildDashboardState(authed = false) {
     sessions: sessionsData,
     allSessions: allSessionsData,
     cronJobs: cronJobsData,
+    profiles: profilesData,
     quickActions,
     explorerRoots: ROOTS.map(buildExplorerRoot),
     tokens: getTokens(insightsData),
@@ -1044,6 +1046,104 @@ app.get('/api/all-sessions', requireAuth, (req, res) => {
   // Full list for agent panel — limit 250, cached 10s
   const data = getAllSessions();
   res.json({ sessions: data, cachedAt: hermesAllSessionsCache.at });
+});
+
+function parseHermesProfileList(raw) {
+  const lines = String(raw || '').split(/\r?\n/).map((l) => l.trimEnd()).filter(Boolean);
+  // First line is header, second is separator — skip both, parse from line 3 onward
+  const dataLines = lines.slice(2);
+  const profiles = [];
+  for (const line of dataLines) {
+    const active = line.includes('◆');
+    const cleaned = line.replace(/[◆\s]+$/, '').replace(/\s*◆\s*/, '').trim();
+    const parts = cleaned.split(/\s{2,}/).map((p) => p.trim()).filter(Boolean);
+    if (parts.length < 3) continue;
+    profiles.push({
+      name: parts[0] || '',
+      model: parts[1] || '—',
+      gateway: (parts[2] || '').toLowerCase(),
+      alias: parts[3] && parts[3] !== '—' ? parts[3] : null,
+      active,
+    });
+  }
+  return profiles;
+}
+
+async function getProfiles() {
+  const now = Date.now();
+  if (getProfiles.cache && now - getProfiles.cache.at < 15_000) return getProfiles.cache.data;
+  const raw = await shell('hermes profile list');
+  if (raw) {
+    const data = parseHermesProfileList(raw);
+    getProfiles.cache = { at: now, data };
+    return data;
+  }
+  if (getProfiles.cache?.data?.length) return getProfiles.cache.data;
+  return [];
+}
+getProfiles.cache = { at: 0, data: [] };
+
+app.get('/api/profiles', requireAuth, async (req, res) => {
+  const profiles = await getProfiles();
+  res.json({ ok: true, profiles });
+});
+
+// ── Gateway Service Management ─────────────────────────────────────────────
+
+function getGatewayServiceName(profile) {
+  return `hermes-gateway-${profile || 'soci'}`;
+}
+
+app.get('/api/gateway/:profile', requireAuth, async (req, res) => {
+  const profile = req.params.profile;
+  const svc = getGatewayServiceName(profile);
+  try {
+    const [isActive, isEnabled, status] = await Promise.all([
+      shell(`systemctl is-active ${svc} 2>/dev/null || echo inactive`),
+      shell(`systemctl is-enabled ${svc} 2>/dev/null || echo disabled`),
+      shell(`systemctl status ${svc} 2>/dev/null | head -10`),
+    ]);
+    res.json({
+      ok: true,
+      profile,
+      service: svc,
+      active: isActive.trim() === 'active',
+      enabled: isEnabled.trim() === 'enabled',
+      status: status.trim(),
+    });
+  } catch (e) {
+    res.json({ ok: true, profile, service: svc, active: false, enabled: false, status: 'not installed' });
+  }
+});
+
+app.post('/api/gateway/:profile/:action', requireCsrf, async (req, res) => {
+  const profile = req.params.profile;
+  const action = req.params.action; // start, stop, restart, enable, disable
+  const svc = getGatewayServiceName(profile);
+
+  if (!['start', 'stop', 'restart', 'enable', 'disable'].includes(action)) {
+    return res.status(400).json({ error: 'invalid action' });
+  }
+
+  try {
+    const result = await shell(`systemctl ${action} ${svc} 2>&1`);
+    const isActive = (await shell(`systemctl is-active ${svc} 2>/dev/null || echo inactive`)).trim() === 'active';
+    res.json({ ok: true, profile, action, active: isActive, output: result.trim() });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/gateway/:profile/logs', requireAuth, async (req, res) => {
+  const profile = req.params.profile;
+  const svc = getGatewayServiceName(profile);
+  const lines = Math.min(parseInt(req.query.lines || '50', 10), 500);
+  try {
+    const logs = await shell(`journalctl -u ${svc} --no-pager -n ${lines} 2>&1`);
+    res.json({ ok: true, profile, service: svc, logs: logs.trim() });
+  } catch (e) {
+    res.json({ ok: true, profile, service: svc, logs: '' });
+  }
 });
 
 app.get('/api/explorer', requireAuth, (req, res) => {
