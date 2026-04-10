@@ -29,7 +29,7 @@ A self-hosted web dashboard for the Hermes AI agent stack. Provides a browser-ba
 ## Quick Start
 
 ```bash
-git clone <repo-url> hermes-control-interface
+git clone https://github.com/xaspx/hermes-control-interface.git hermes-control-interface
 cd hermes-control-interface
 npm install          # or: bash install.sh (interactive setup)
 cp .env.example .env
@@ -189,6 +189,64 @@ hermes-control-interface/
 - Sprite animation loop skips when custom avatar is loaded
 
 ---
+
+## Roadmap
+
+Improvements grouped by dependency and parallelism (from senior software engineer audit):
+
+### Group 1 — Security + Password (Do together)
+- [ ] bcrypt password hashing (replace plaintext env)
+- [ ] reset-password CLI command
+- [ ] reset-password bash script
+- [ ] Non-root systemd user
+
+Why together: all touch auth/server config, one restart done.
+
+### Group 2 — Code Refactor (Do together)
+- [ ] Split server.js into modules (1250+ line monolith)
+- [ ] Replace `execFileSync` → `execFile` (async, non-blocking)
+- [ ] Remove dead code (renderBackground hardcode, offlineReply dummy, placeholder cronJobs)
+- [ ] Fix variable naming collision (`state` parameter vs global)
+- [ ] YAML config parsing (replace regex with proper parser)
+
+Why together: all touch server.js, doing one-by-one causes conflicts.
+
+### Group 3 — Open Source Docs + Config (Do together, parallel with Group 2)
+- [ ] CONTRIBUTING.md
+- [ ] CODE_OF_CONDUCT.md
+- [ ] Issue templates (.github/)
+- [ ] ESLint / Prettier config
+
+Why together: pure new files, doesn't interfere with code.
+
+### Group 4 — DevOps (After Group 2)
+- [ ] Dockerfile
+- [ ] CI/CD (GitHub Actions)
+
+Why together: Dockerfile needs final structure from Group 2. CI/CD needs test suite + lint config.
+
+### Group 5 — Testing (After Group 2)
+- [ ] Test suite minimal (auth, path traversal, API endpoints)
+
+Why last: tests written for already-refactored code.
+
+### Group 6 — Performance (Anytime)
+- [ ] Sessions Map eviction (memory leak prevention)
+- [ ] WebSocket connection timeout/cleanup
+
+Why independent: doesn't interfere with others.
+
+### Execution Order
+
+```
+Group 1 (Security)              ← start first, low impact
+    ↓
+Group 2 + Group 3 (parallel)    ← refactor code + docs together
+    ↓
+Group 4 + Group 5 (parallel)    ← Docker + CI + test
+    ↓
+Group 6 (Performance)           ← anytime
+```
 
 ## Troubleshooting
 

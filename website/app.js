@@ -472,17 +472,22 @@ function renderSidebarAgent(snapshot) {
 
   const avatarUrl = snapshot.avatar?.url || '';
   const hasCustomAvatar = snapshot.avatar?.custom;
+  const avatarHash = snapshot.avatar?.hash || 'default';
 
   if (hasCustomAvatar && avatarUrl) {
-    // Custom avatar: show <img> (supports animated GIF), hide canvas
-    const cacheBustedUrl = `${avatarUrl}?t=${Date.now()}`;
-    if (els.sidebarAvatarImg.src !== cacheBustedUrl) {
-      els.sidebarAvatarImg.src = cacheBustedUrl;
+    // Only reload image when avatar hash actually changes (not every snapshot)
+    if (state._lastAvatarHash !== avatarHash) {
+      state._lastAvatarHash = avatarHash;
+      els.sidebarAvatarImg.src = `${avatarUrl}?h=${avatarHash}`;
     }
     els.sidebarAvatarImg.style.display = '';
     els.sidebarAgentSprite.style.display = 'none';
   } else {
     // Default: show pixel sprite canvas, hide img
+    if (state._lastAvatarHash !== 'default') {
+      state._lastAvatarHash = 'default';
+      els.sidebarAvatarImg.src = '';
+    }
     els.sidebarAvatarImg.style.display = 'none';
     els.sidebarAgentSprite.style.display = '';
     drawSidebarSprite(agentState, 0);
@@ -526,6 +531,10 @@ function renderSessions(snapshot) {
   // Sessions rendered from /api/sessions polling (limit 10)
   if (!els.sessionsList) return;
   const sessions = Array.isArray(snapshot.sessions) ? snapshot.sessions : [];
+  // Skip rebuild if sessions haven't changed (prevent scroll reset)
+  const fingerprint = sessions.map(s => s.id).join(',');
+  if (fingerprint === state._lastSessionsFingerprint) return;
+  state._lastSessionsFingerprint = fingerprint;
   if (!sessions.length) {
     els.sessionsList.innerHTML = '<div class="list-item"><span class="bullet" style="background: var(--amber);"></span><div class="item-text">No sessions found<span class="meta">run hermes sessions list</span></div></div>';
     return;
@@ -1085,6 +1094,7 @@ function snapshotDataChanged(prev, next, key) {
   if (key === 'tokens') return JSON.stringify(prev.tokens) !== JSON.stringify(next.tokens);
   if (key === 'background') return JSON.stringify(prev.background) !== JSON.stringify(next.background);
   if (key === 'knowledge') return prev.knowledge !== next.knowledge;
+  if (key === 'avatar') return prev.avatar?.hash !== next.avatar?.hash;
   return true;
 }
 
@@ -1350,9 +1360,7 @@ async function uploadAvatarFile(file) {
     reader.readAsDataURL(file);
   });
   // Reset cached avatar so the new image loads on next snapshot/render
-  state._lastSidebarAvatarKey = null;
-  state._sidebarAvatarImg = null;
-  state._sidebarAvatarReady = false;
+  state._lastAvatarHash = null;
   state.avatarSource = '';
   state.avatarImage = null;
   state._avatarLoadingSrc = null;
@@ -1556,7 +1564,7 @@ function startAutoRefresh() {
   if (!state.autoRefreshEnabled) return;
   state.autoRefreshTimer = setInterval(() => {
     fetchSnapshot();
-  }, 10000);
+  }, 30000);
 }
 
 function stopAutoRefresh() {

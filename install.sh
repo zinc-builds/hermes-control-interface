@@ -161,9 +161,11 @@ Restart=always
 RestartSec=10
 Environment=NODE_ENV=production
 
-# Security: run as non-root if desired
-# User=hermes
-# Group=hermes
+# Security: run as non-root user (recommended for production)
+# Create user first: sudo useradd -r -s /bin/false hermes
+# Then chown the project dir: sudo chown -R hermes:hermes $REPO_ROOT
+User=hermes
+Group=hermes
 
 [Install]
 WantedBy=multi-user.target

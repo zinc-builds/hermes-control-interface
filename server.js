@@ -5,6 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
+const bcrypt = require('bcrypt');
 const { execFileSync } = require('child_process');
 const pty = require('node-pty');
 const { WebSocketServer } = require('ws');
@@ -923,10 +924,11 @@ function buildDashboardState(authed = false) {
     logs: events.slice(-30),
     loginIdentity: 'root@hermes',
     workingDir: PROJECT_ROOT,
-    avatar: {
-      url: '/api/avatar/image',
-      custom: !!readAvatarOverride(),
-    },
+    avatar: (() => {
+      const override = readAvatarOverride();
+      const hash = override ? crypto.createHash('md5').update(override).digest('hex').slice(0, 12) : 'default';
+      return { url: '/api/avatar/image', custom: !!override, hash };
+    })(),
     terminal: {
       ready: terminal.ready,
       buffer: terminal.buffer,
@@ -955,10 +957,19 @@ app.get('/api/session', (req, res) => {
   res.json(response);
 });
 
+function verifyPassword(password) {
+  // bcrypt hash check (preferred)
+  if (CONTROL_PASSWORD.startsWith('$2b$') || CONTROL_PASSWORD.startsWith('$2a$')) {
+    return bcrypt.compareSync(password, CONTROL_PASSWORD);
+  }
+  // plaintext fallback for migration
+  return safeTimingEqual(password, CONTROL_PASSWORD);
+}
+
 app.post('/api/login', loginRateLimiter, (req, res) => {
   const ip = getClientIp(req);
   const password = String(req.body?.password || '');
-  if (!safeTimingEqual(password, CONTROL_PASSWORD)) {
+  if (!verifyPassword(password)) {
     log('auth.failed', `bad password from ip ${ip}`);
     return res.status(401).json({ ok: false, error: 'bad password' });
   }

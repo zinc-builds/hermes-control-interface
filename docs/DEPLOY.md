@@ -13,7 +13,7 @@
 ## Step 1 — Install the Dashboard
 
 ```bash
-git clone <repo-url> hermes-control-interface
+git clone https://github.com/xaspx/hermes-control-interface.git hermes-control-interface
 cd hermes-control-interface
 npm install
 cp .env.example .env
@@ -107,6 +107,14 @@ sudo systemctl reload nginx
 
 ## Step 4 — Systemd Service (optional but recommended)
 
+> **Security recommendation:** Run the service as a non-root user.
+> Create a dedicated user first:
+> ```bash
+> sudo useradd -r -s /bin/false hermes
+> sudo chown -R hermes:hermes /path/to/hermes-control-interface
+> ```
+> Then uncomment `User=hermes` and `Group=hermes` in the service file below.
+
 Create `/etc/systemd/system/hermes-control.service`:
 
 ```ini
@@ -122,12 +130,13 @@ ExecStart=/usr/bin/node server.js
 Restart=always
 RestartSec=10
 Environment=NODE_ENV=production
-# Environment=HERMES_CONTROL_PASSWORD=your-password-here
-# Environment=HERMES_CONTROL_SECRET=your-secret-here
+# Environment=HERMES_CONTROL_PASSWORD=your-p...here
+# Environment=HERMES_CONTROL_SECRET=***
 
-# Security: run as unprivileged user
-# User=hermes
-# Group=hermes
+# Run as non-root user (recommended for production)
+# Create the user first: sudo useradd -r -s /bin/false hermes
+User=hermes
+Group=hermes
 
 [Install]
 WantedBy=multi-user.target

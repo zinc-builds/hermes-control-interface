@@ -10,7 +10,7 @@
 ## Install
 
 ```bash
-git clone <repo-url> hermes-control-interface
+git clone https://github.com/xaspx/hermes-control-interface.git hermes-control-interface
 cd hermes-control-interface
 cp .env.example .env
 npm install
