@@ -52,7 +52,7 @@ else
   cp .env.example .env
 
   # Generate secure secrets
-  if grep -q "^HERMES_CONTROL_PASSWORD=*** .env 2>/dev/null; then
+  if grep -q '^HERMES_CONTROL_PASSWORD=\*\*\*' .env 2>/dev/null; then
     NEW_PASS=$(openssl_rand | cut -c1-24)
     # Hash with bcrypt and save
     HASHED=$(node -e "require('bcrypt').hashSync('${NEW_PASS}', 10)" 2>/dev/null || echo "")
@@ -75,8 +75,8 @@ else
     fi
   fi
 
-  if grep -q "^HERMES_CONTROL_SECRET=.*\*\*\*" .env 2>/dev/null; then
-    NEW_SECRET=$(openssl_rand | cut -c1-64)
+  if grep -q '^HERMES_CONTROL_SECRET=\*\*\*' .env 2>/dev/null; then
+    NEW_SECRET=$(uuid4 | cut -c1-64)
     sed -i "s|^HERMES_CONTROL_SECRET=.*|HERMES_CONTROL_SECRET=${NEW_SECRET}|" .env
     info "Generated HERMES_CONTROL_SECRET"
   fi

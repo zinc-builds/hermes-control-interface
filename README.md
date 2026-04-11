@@ -185,6 +185,14 @@ hermes-control-interface/
 
 ## Changelog
 
+### v2.0.2 — Bugfix: install.sh syntax error
+- **Fix install.sh crash** — unclosed quotes in `grep -q` patterns (lines 55, 78) caused bash to merge lines and fail with "syntax error near unexpected token ('" on line 89
+- Switched grep patterns to single quotes with escaped asterisks
+- `NEW_SECRET` generation now uses `uuid4` helper instead of `openssl_rand`
+
+### v2.0.1 — Gateway error handling + toast notifications
+- Fixed gateway error handling and added toast notifications for action feedback
+
 ### v2.0.0 — Agent Management + Gateway Services + UX Polish
 - **Agent List panel** — sidebar showing all Hermes profiles with status, model, gateway controls
 - **Activate profile** — set default profile via `hermes profile use` from dashboard
