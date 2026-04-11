@@ -365,13 +365,16 @@ async function setAgentDefault(name) {
 }
 
 async function loadAgentDetail(container, params) {
+  const name = params?.name || 'unknown';
+  state.currentAgent = name;
+
   container.innerHTML = `
     <div class="page-header">
       <div>
-        <div class="page-title">Agent: ${params.name || 'Unknown'}</div>
+        <div class="page-title">Agent: ${name}</div>
         <div class="page-subtitle">Agent detail</div>
       </div>
-      <button class="btn btn-ghost" onclick="navigate('agents')">← Back</button>
+      <button class="btn btn-ghost" onclick="navigate('agents')">← Back to Agents</button>
     </div>
     <div class="tabs" id="agent-tabs">
       <button class="tab active" data-tab="dashboard">Dashboard</button>
@@ -384,7 +387,92 @@ async function loadAgentDetail(container, params) {
       <div class="loading">Loading</div>
     </div>
   `;
-  // Will implement in Module 2.3-2.7
+
+  // Tab switching
+  document.getElementById('agent-tabs').addEventListener('click', (e) => {
+    const tab = e.target.closest('.tab');
+    if (!tab) return;
+    document.querySelectorAll('#agent-tabs .tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    loadAgentTab(tab.dataset.tab, name);
+  });
+
+  // Load default tab
+  loadAgentTab('dashboard', name);
+}
+
+async function loadAgentTab(tabName, profileName) {
+  const content = document.getElementById('agent-tab-content');
+  content.innerHTML = '<div class="loading">Loading</div>';
+
+  switch (tabName) {
+    case 'dashboard': await loadAgentDashboard(content, profileName); break;
+    case 'sessions': await loadAgentSessions(content, profileName); break;
+    case 'gateway': await loadAgentGateway(content, profileName); break;
+    case 'config': await loadAgentConfig(content, profileName); break;
+    case 'memory': await loadAgentMemory(content, profileName); break;
+    default: content.innerHTML = '<div class="empty">Unknown tab</div>';
+  }
+}
+
+async function loadAgentDashboard(container, name) {
+  container.innerHTML = '<div class="loading">Loading dashboard</div>';
+
+  try {
+    const [gatewayRes, profilesRes] = await Promise.all([
+      api(`/api/gateway/${name}`),
+      api('/api/profiles'),
+    ]);
+
+    const profile = profilesRes.ok ? profilesRes.profiles.find(p => p.name === name) : null;
+    const gatewayOk = gatewayRes.ok;
+
+    container.innerHTML = `
+      <div class="card-grid">
+        <div class="card">
+          <div class="card-title">Identity</div>
+          <div class="stat-row"><span class="stat-label">Profile</span><span class="stat-value">${name}</span></div>
+          <div class="stat-row"><span class="stat-label">Model</span><span class="stat-value">${profile?.model || '—'}</span></div>
+          <div class="stat-row"><span class="stat-label">Status</span><span class="stat-value ${gatewayOk && gatewayRes.active ? 'status-ok' : 'status-off'}">${gatewayOk && gatewayRes.active ? '● Active' : '○ Inactive'}</span></div>
+          ${profile?.alias ? `<div class="stat-row"><span class="stat-label">Alias</span><span class="stat-value">${profile.alias}</span></div>` : ''}
+          ${profile?.active ? `<div class="stat-row"><span class="stat-label">Default</span><span class="stat-value status-ok">Yes</span></div>` : ''}
+        </div>
+        <div class="card">
+          <div class="card-title">Gateway</div>
+          <div class="stat-row"><span class="stat-label">Service</span><span class="stat-value">${gatewayRes.service || '—'}</span></div>
+          <div class="stat-row"><span class="stat-label">Status</span><span class="stat-value ${gatewayOk && gatewayRes.active ? 'status-ok' : 'status-off'}">${gatewayOk && gatewayRes.active ? '● Running' : '○ Stopped'}</span></div>
+          <div class="stat-row"><span class="stat-label">Enabled</span><span class="stat-value">${gatewayRes.enabled ? 'Yes' : 'No'}</span></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Token Usage (today)</div>
+          <div class="loading">Coming soon</div>
+        </div>
+      </div>
+    `;
+  } catch (e) {
+    container.innerHTML = `<div class="card"><div class="card-title">Error</div><div class="error-msg">${e.message}</div></div>`;
+  }
+}
+
+// Agent tab stubs (will implement per module)
+async function loadAgentSessions(container, name) {
+  container.innerHTML = `<div class="card"><div class="card-title">Sessions</div><div class="loading">Loading sessions for ${name}...</div></div>`;
+  // TODO: Module 2.4
+}
+
+async function loadAgentGateway(container, name) {
+  container.innerHTML = `<div class="card"><div class="card-title">Gateway</div><div class="loading">Loading gateway for ${name}...</div></div>`;
+  // TODO: Module 2.5
+}
+
+async function loadAgentConfig(container, name) {
+  container.innerHTML = `<div class="card"><div class="card-title">Config</div><div class="loading">Loading config for ${name}...</div></div>`;
+  // TODO: Module 2.6
+}
+
+async function loadAgentMemory(container, name) {
+  container.innerHTML = `<div class="card"><div class="card-title">Memory</div><div class="loading">Loading memory for ${name}...</div></div>`;
+  // TODO: Module 2.7
 }
 
 async function loadMonitor(container) {
