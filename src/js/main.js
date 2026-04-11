@@ -896,14 +896,75 @@ async function loadMonitor(container) {
         <div class="page-title">System Monitor</div>
         <div class="page-subtitle">System resources and services</div>
       </div>
+      <button class="btn btn-ghost" onclick="loadMonitor(document.querySelector('.page.active'))">↻ Refresh</button>
     </div>
-    <div class="card-grid">
+    <div class="card-grid" id="monitor-resources">
       <div class="card"><div class="card-title">CPU / RAM / Disk</div><div class="loading">Loading</div></div>
       <div class="card"><div class="card-title">Services</div><div class="loading">Loading</div></div>
+      <div class="card"><div class="card-title">Gateways</div><div class="loading">Loading</div></div>
+    </div>
+    <div class="card-grid" style="margin-top:16px;" id="monitor-extras">
       <div class="card"><div class="card-title">Cron Jobs</div><div class="loading">Loading</div></div>
+      <div class="card"><div class="card-title">Token Usage (30d)</div><div class="loading">Loading</div></div>
+      <div class="card"><div class="card-title">Errors</div><div class="loading">Loading</div></div>
     </div>
   `;
-  // Will implement in Module 3.1
+
+  try {
+    const [healthRes, profilesRes] = await Promise.all([
+      api('/api/system/health'),
+      api('/api/profiles'),
+    ]);
+
+    // Resources card
+    const resourcesEl = document.getElementById('monitor-resources');
+    resourcesEl.innerHTML = `
+      <div class="card">
+        <div class="card-title">Resources</div>
+        <div class="stat-row"><span class="stat-label">CPU</span><span class="stat-value">${healthRes.cpu || 'N/A'}</span></div>
+        <div class="stat-row"><span class="stat-label">RAM</span><span class="stat-value">${healthRes.ram || 'N/A'}</span></div>
+        <div class="stat-row"><span class="stat-label">Disk</span><span class="stat-value">${healthRes.disk || 'N/A'}</span></div>
+        <div class="stat-row"><span class="stat-label">Uptime</span><span class="stat-value">${healthRes.uptime || 'N/A'}</span></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Services</div>
+        <div class="stat-row"><span class="stat-label">Nginx</span><span class="stat-value ${healthRes.nginx === 'active' ? 'status-ok' : 'status-off'}">● ${healthRes.nginx || 'unknown'}</span></div>
+        <div class="stat-row"><span class="stat-label">Fail2ban</span><span class="stat-value ${healthRes.fail2ban === 'active' ? 'status-ok' : 'status-off'}">● ${healthRes.fail2ban || 'unknown'}</span></div>
+        <div class="stat-row"><span class="stat-label">Docker</span><span class="stat-value ${healthRes.docker === 'active' ? 'status-ok' : 'status-off'}">● ${healthRes.docker || 'unknown'}</span></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Gateways</div>
+        ${profilesRes.ok && profilesRes.profiles ? profilesRes.profiles.map(p => `
+          <div class="stat-row">
+            <span class="stat-label">${p.name}</span>
+            <span class="stat-value ${p.gateway === 'running' ? 'status-ok' : 'status-off'}">${p.gateway === 'running' ? '● running' : '○ stopped'}</span>
+          </div>
+        `).join('') : '<div class="stat-row"><span class="stat-label">No profiles</span></div>'}
+      </div>
+    `;
+
+    // Extras
+    const extrasEl = document.getElementById('monitor-extras');
+    extrasEl.innerHTML = `
+      <div class="card">
+        <div class="card-title">Cron Jobs</div>
+        <div class="stat-row"><span class="stat-label">Total</span><span class="stat-value">${healthRes.cron_total || 0}</span></div>
+        <div class="stat-row"><span class="stat-label">Active</span><span class="stat-value">${healthRes.cron_active || 0}</span></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Token Usage (30d)</div>
+        <div class="stat-row"><span class="stat-label">Tokens</span><span class="stat-value">${healthRes.tokens_30d || '—'}</span></div>
+        <div class="stat-row"><span class="stat-label">Cost</span><span class="stat-value">${healthRes.cost_30d || '—'}</span></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Errors</div>
+        <div class="stat-row"><span class="stat-label">Error count</span><span class="stat-value ${healthRes.error_count > 0 ? '' : 'status-ok'}">${healthRes.error_count || 0}</span></div>
+      </div>
+    `;
+
+  } catch (e) {
+    document.getElementById('monitor-resources').innerHTML = `<div class="card"><div class="card-title">Error</div><div class="error-msg">${e.message}</div></div>`;
+  }
 }
 
 async function loadSkills(container) {
@@ -911,14 +972,78 @@ async function loadSkills(container) {
     <div class="page-header">
       <div>
         <div class="page-title">Skills Marketplace</div>
-        <div class="page-subtitle">Browse and manage skills</div>
+        <div class="page-subtitle">Browse and manage installed skills</div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <input type="text" id="skills-search" placeholder="Search skills..." style="width:200px;" />
+        <button class="btn btn-ghost" onclick="loadSkills(document.querySelector('.page.active'))">↻ Refresh</button>
       </div>
     </div>
-    <div class="card-grid">
-      <div class="card"><div class="card-title">Installed Skills</div><div class="loading">Loading</div></div>
+    <div id="skills-list">
+      <div class="loading">Loading skills...</div>
     </div>
   `;
-  // Will implement in Module 3.2
+
+  try {
+    const res = await api('/api/skills');
+    const listEl = document.getElementById('skills-list');
+
+    if (!res.ok || !res.skills || res.skills.length === 0) {
+      listEl.innerHTML = '<div class="card"><div class="card-title">No skills installed</div></div>';
+      return;
+    }
+
+    const skills = res.skills;
+
+    function renderSkills(filter = '') {
+      const filtered = filter
+        ? skills.filter(s =>
+            (s.name || '').toLowerCase().includes(filter) ||
+            (s.description || '').toLowerCase().includes(filter) ||
+            (s.category || '').toLowerCase().includes(filter)
+          )
+        : skills;
+
+      if (filtered.length === 0) {
+        listEl.innerHTML = '<div class="card"><div class="card-title">No matching skills</div></div>';
+        return;
+      }
+
+      // Group by category
+      const grouped = {};
+      filtered.forEach(s => {
+        const cat = s.category || 'uncategorized';
+        if (!grouped[cat]) grouped[cat] = [];
+        grouped[cat].push(s);
+      });
+
+      listEl.innerHTML = Object.entries(grouped).map(([cat, items]) => `
+        <div style="margin-bottom:16px;">
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--fg-muted);margin-bottom:8px;">${cat}</div>
+          <div class="card-grid">
+            ${items.map(s => `
+              <div class="card">
+                <div class="card-title">${s.name || 'Unknown'}</div>
+                <div style="font-size:11px;color:var(--fg-muted);margin-top:4px;">${s.description || 'No description'}</div>
+                <div style="margin-top:8px;display:flex;gap:8px;">
+                  ${s.enabled ? '<span class="badge status-ok">enabled</span>' : '<span class="badge status-off">disabled</span>'}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    renderSkills();
+
+    document.getElementById('skills-search')?.addEventListener('input', (e) => {
+      renderSkills(e.target.value.toLowerCase());
+    });
+
+  } catch (e) {
+    document.getElementById('skills-list').innerHTML = `<div class="card"><div class="card-title">Error</div><div class="error-msg">${e.message}</div></div>`;
+  }
 }
 
 async function loadMaintenance(container) {
@@ -926,16 +1051,198 @@ async function loadMaintenance(container) {
     <div class="page-header">
       <div>
         <div class="page-title">Maintenance</div>
-        <div class="page-subtitle">System tools and diagnostics</div>
+        <div class="page-subtitle">System tools, diagnostics, and user management</div>
       </div>
     </div>
-    <div class="card-grid">
-      <div class="card"><div class="card-title">Doctor</div><div class="loading">Loading</div></div>
-      <div class="card"><div class="card-title">Update</div><div class="loading">Loading</div></div>
-      <div class="card"><div class="card-title">Users</div><div class="loading">Loading</div></div>
+    <div class="card-grid" id="maintenance-grid">
+      <div class="card">
+        <div class="card-title">Doctor</div>
+        <div class="stat-row"><span class="stat-label">Run diagnostics</span></div>
+        <div class="card-actions" style="margin-top:8px;">
+          <button class="btn btn-ghost" onclick="runDoctor()">Run Diagnose</button>
+          <button class="btn btn-ghost" onclick="runDoctor(true)">Auto-fix</button>
+        </div>
+        <div id="doctor-result" style="margin-top:8px;"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Dump</div>
+        <div class="stat-row"><span class="stat-label">Setup summary for debugging</span></div>
+        <div class="card-actions" style="margin-top:8px;">
+          <button class="btn btn-ghost" onclick="runDump()">Generate Dump</button>
+        </div>
+        <div id="dump-result" style="margin-top:8px;"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Hermes Update</div>
+        <div class="stat-row"><span class="stat-label">Version</span><span class="stat-value" id="update-version">—</span></div>
+        <div class="card-actions" style="margin-top:8px;">
+          <button class="btn btn-ghost" onclick="runUpdate()">Update Hermes</button>
+        </div>
+        <div id="update-result" style="margin-top:8px;"></div>
+      </div>
+    </div>
+    <div class="card-grid" style="margin-top:16px;" id="maintenance-users">
+      <div class="card">
+        <div class="card-title">HCI Users</div>
+        <div id="users-list"><div class="loading">Loading users...</div></div>
+        <div class="card-actions" style="margin-top:8px;">
+          <button class="btn btn-ghost" onclick="showCreateUser()">+ Create User</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Hermes Auth</div>
+        <div id="auth-list"><div class="loading">Loading auth...</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Audit Log</div>
+        <div id="audit-log"><div class="loading">Loading audit...</div></div>
+      </div>
     </div>
   `;
-  // Will implement in Module 3.3
+
+  // Load users
+  loadUsers();
+
+  // Load auth
+  loadAuth();
+
+  // Load audit
+  loadAudit();
+
+  // Load version
+  try {
+    const healthRes = await api('/api/system/health');
+    if (healthRes.ok) {
+      document.getElementById('update-version').textContent = healthRes.hermes_version || '—';
+    }
+  } catch {}
+}
+
+async function loadUsers() {
+  try {
+    const res = await api('/api/users');
+    const el = document.getElementById('users-list');
+    if (res.ok && res.users) {
+      el.innerHTML = res.users.map(u => `
+        <div class="stat-row">
+          <span class="stat-label">${u.username}</span>
+          <span class="stat-value">${u.role} ${u.last_login ? '· last: ' + new Date(u.last_login).toLocaleDateString() : ''}</span>
+        </div>
+      `).join('');
+    } else {
+      el.innerHTML = '<div class="stat-row"><span class="stat-label">No users</span></div>';
+    }
+  } catch (e) {
+    document.getElementById('users-list').innerHTML = `<div class="error-msg">${e.message}</div>`;
+  }
+}
+
+async function loadAuth() {
+  try {
+    const res = await api('/api/auth/providers');
+    const el = document.getElementById('auth-list');
+    if (res.ok && res.providers) {
+      el.innerHTML = res.providers.map(p => `
+        <div class="stat-row">
+          <span class="stat-label">${p.name}</span>
+          <span class="stat-value ${p.set ? 'status-ok' : 'status-off'}">${p.set ? '● set' : '○ not set'}</span>
+        </div>
+      `).join('');
+    } else {
+      el.innerHTML = '<div class="stat-row"><span class="stat-label">Auth info unavailable</span></div>';
+    }
+  } catch {
+    document.getElementById('auth-list').innerHTML = '<div class="stat-row"><span class="stat-label">Auth info unavailable</span></div>';
+  }
+}
+
+async function loadAudit() {
+  try {
+    const res = await api('/api/audit');
+    const el = document.getElementById('audit-log');
+    if (res.ok && res.entries) {
+      el.innerHTML = res.entries.slice(0, 10).map(e => `
+        <div style="font-size:10px;color:var(--fg-muted);padding:2px 0;">[${e.timestamp}] ${e.user}: ${e.action}</div>
+      `).join('') || '<div class="stat-row"><span class="stat-label">No audit entries</span></div>';
+    } else {
+      el.innerHTML = '<div class="stat-row"><span class="stat-label">No audit entries</span></div>';
+    }
+  } catch {
+    document.getElementById('audit-log').innerHTML = '<div class="stat-row"><span class="stat-label">Audit unavailable</span></div>';
+  }
+}
+
+async function runDoctor(fix = false) {
+  const el = document.getElementById('doctor-result');
+  el.innerHTML = '<div class="loading">Running diagnostics...</div>';
+  try {
+    const csrfToken = state.csrfToken || '';
+    const res = await api('/api/doctor', {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': csrfToken },
+      body: JSON.stringify({ fix }),
+    });
+    el.innerHTML = `<pre style="font-size:11px;white-space:pre-wrap;color:var(--fg-muted);">${escapeHtml(res.output || 'No output')}</pre>`;
+  } catch (e) {
+    el.innerHTML = `<div class="error-msg">${e.message}</div>`;
+  }
+}
+
+async function runDump() {
+  const el = document.getElementById('dump-result');
+  el.innerHTML = '<div class="loading">Generating dump...</div>';
+  try {
+    const res = await api('/api/dump');
+    el.innerHTML = `<pre style="font-size:10px;white-space:pre-wrap;max-height:300px;overflow-y:auto;color:var(--fg-muted);">${escapeHtml(res.output || 'No output')}</pre>`;
+  } catch (e) {
+    el.innerHTML = `<div class="error-msg">${e.message}</div>`;
+  }
+}
+
+async function runUpdate() {
+  if (!confirm('Update Hermes? This may take a minute.')) return;
+  const el = document.getElementById('update-result');
+  el.innerHTML = '<div class="loading">Updating...</div>';
+  try {
+    const csrfToken = state.csrfToken || '';
+    const res = await api('/api/update', {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': csrfToken },
+    });
+    el.innerHTML = `<pre style="font-size:11px;white-space:pre-wrap;color:var(--fg-muted);">${escapeHtml(res.output || 'Update started')}</pre>`;
+    showToast('Hermes update started', 'success');
+  } catch (e) {
+    el.innerHTML = `<div class="error-msg">${e.message}</div>`;
+  }
+}
+
+function showCreateUser() {
+  const username = prompt('Username:');
+  if (!username) return;
+  const password = prompt('Password (min 8 chars):');
+  if (!password) return;
+  const role = prompt('Role (admin/viewer):', 'viewer');
+  if (!role) return;
+  createUser(username, password, role);
+}
+
+async function createUser(username, password, role) {
+  try {
+    const csrfToken = state.csrfToken || '';
+    const res = await api('/api/users', {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': csrfToken },
+      body: JSON.stringify({ username, password, role }),
+    });
+    if (res.ok) {
+      showToast(`User ${username} created`, 'success');
+      loadUsers();
+    } else {
+      showToast(`Failed: ${res.error}`, 'error');
+    }
+  } catch (e) {
+    showToast(`Failed: ${e.message}`, 'error');
+  }
 }
 
 // ============================================
