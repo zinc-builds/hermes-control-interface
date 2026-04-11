@@ -315,14 +315,40 @@ async function loadTokenUsage(elementId, days = 7) {
   if (!el) return;
   try {
     const res = await api(`/api/usage/${days}`);
-    if (res.ok && res.output) {
-      el.innerHTML = `<pre style="font-size:10px;white-space:pre-wrap;color:var(--fg-muted);margin:0;max-height:150px;overflow-y:auto;">${escapeHtml(res.output)}</pre>`;
+    if (res.ok) {
+      const d = res;
+      el.innerHTML = `
+        <div class="stat-row"><span class="stat-label">Sessions</span><span class="stat-value">${d.sessions}</span></div>
+        <div class="stat-row"><span class="stat-label">Messages</span><span class="stat-value">${d.messages?.toLocaleString() || 0}</span></div>
+        <div class="stat-row"><span class="stat-label">Input tokens</span><span class="stat-value">${formatNumber(d.inputTokens)}</span></div>
+        <div class="stat-row"><span class="stat-label">Output tokens</span><span class="stat-value">${formatNumber(d.outputTokens)}</span></div>
+        <div class="stat-row"><span class="stat-label">Total tokens</span><span class="stat-value">${formatNumber(d.totalTokens)}</span></div>
+        <div class="stat-row"><span class="stat-label">Est. cost</span><span class="stat-value">${d.cost || '$0.00'}</span></div>
+        <div class="stat-row"><span class="stat-label">Active time</span><span class="stat-value">${d.activeTime || '—'}</span></div>
+        ${d.topTools && d.topTools.length > 0 ? `
+          <div style="margin-top:8px;font-size:10px;color:var(--fg-subtle);text-transform:uppercase;letter-spacing:0.06em;">Top Tools</div>
+          ${d.topTools.slice(0, 3).map(t => `
+            <div class="stat-row">
+              <span class="stat-label">${t.name}</span>
+              <span class="stat-value">${t.calls} (${t.pct})</span>
+            </div>
+          `).join('')}
+        ` : ''}
+      `;
     } else {
       el.innerHTML = '<div class="stat-row"><span class="stat-label">No data</span></div>';
     }
   } catch {
     el.innerHTML = '<div class="stat-row"><span class="stat-label">Unavailable</span></div>';
   }
+}
+
+function formatNumber(n) {
+  if (!n) return '0';
+  if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(1) + 'B';
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+  return n.toLocaleString();
 }
 
 async function loadAgents(container) {
@@ -1240,20 +1266,47 @@ async function runUpdate() {
 }
 
 async function showCreateAgent() {
-  const name = await customPrompt('Agent name (lowercase, no spaces):');
-  if (!name) return;
+  const result = await showModal({
+    title: 'Create Agent',
+    message: 'Create a new Hermes profile. Name must be lowercase alphanumeric.',
+    inputs: [
+      { placeholder: 'Agent name (e.g. worker, analyst)', type: 'text' },
+    ],
+    buttons: [
+      { text: 'Cancel', value: null },
+      { text: 'Create Fresh', primary: true, value: 'fresh' },
+      { text: 'Clone Active', value: 'clone' },
+      { text: 'Clone From...', value: 'clone_from' },
+    ],
+  });
+
+  if (!result) return;
+
+  const name = document.getElementById('modal-input-0')?.value || '';
   const safeName = name.replace(/[^a-zA-Z0-9_-]/g, '').toLowerCase();
   if (!safeName) {
     await customAlert('Invalid name. Use letters, numbers, hyphens, underscores.', 'Error');
     return;
   }
-  const cloneFrom = await customPrompt('Clone from profile? (leave empty for fresh):', '');
+
+  let body = { name: safeName };
+
+  if (result === 'clone') {
+    body.cloneArg = '--clone';
+  } else if (result === 'clone_from') {
+    const source = await customPrompt('Clone from which profile?', 'david');
+    if (source) {
+      body.cloneArg = '--clone-from';
+      body.cloneSource = source;
+    }
+  }
+
   try {
     const csrfToken = state.csrfToken || '';
     const res = await api('/api/profiles/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
-      body: JSON.stringify({ name: safeName, cloneFrom: cloneFrom || undefined }),
+      body: JSON.stringify(body),
     });
     if (res.ok) {
       showToast(`Agent ${safeName} created!`, 'success');

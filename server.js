@@ -1827,21 +1827,84 @@ app.get('/api/sessions/stats', requireAuth, async (req, res) => {
 app.get('/api/usage/:days', requireAuth, async (req, res) => {
   try {
     const days = Math.min(parseInt(req.params.days || '7', 10), 90);
-    const output = await shell(`hermes insights --days ${days} 2>&1`);
-    res.json({ ok: true, output });
+    const profile = req.query.profile;
+    const cmd = profile ? `hermes --profile ${profile} insights --days ${days}` : `hermes insights --days ${days}`;
+    const raw = await shell(`${cmd} 2>&1`);
+    const parsed = parseInsights(raw);
+    res.json({ ok: true, ...parsed, raw });
   } catch (e) {
     res.json({ ok: false, error: e.message });
   }
 });
 
+function parseInsights(raw) {
+  const data = {
+    sessions: 0, messages: 0, toolCalls: 0, userMessages: 0,
+    inputTokens: 0, outputTokens: 0, totalTokens: 0, cost: '$0.00',
+    activeTime: '', avgSession: '', period: '',
+    models: [], platforms: [], topTools: [], activity: {},
+    notable: {},
+  };
+  try {
+    // Period
+    const periodMatch = raw.match(/Period:\s*(.+)/);
+    if (periodMatch) data.period = periodMatch[1].trim();
+
+    // Overview
+    const sessionsMatch = raw.match(/Sessions:\s+([\d,]+)/);
+    if (sessionsMatch) data.sessions = parseInt(sessionsMatch[1].replace(/,/g, ''), 10);
+    const messagesMatch = raw.match(/Messages:\s+([\d,]+)/);
+    if (messagesMatch) data.messages = parseInt(messagesMatch[1].replace(/,/g, ''), 10);
+    const toolCallsMatch = raw.match(/Tool calls:\s+([\d,]+)/);
+    if (toolCallsMatch) data.toolCalls = parseInt(toolCallsMatch[1].replace(/,/g, ''), 10);
+    const userMsgMatch = raw.match(/User messages:\s+([\d,]+)/);
+    if (userMsgMatch) data.userMessages = parseInt(userMsgMatch[1].replace(/,/g, ''), 10);
+    const inputMatch = raw.match(/Input tokens:\s+([\d,]+)/);
+    if (inputMatch) data.inputTokens = parseInt(inputMatch[1].replace(/,/g, ''), 10);
+    const outputMatch = raw.match(/Output tokens:\s+([\d,]+)/);
+    if (outputMatch) data.outputTokens = parseInt(outputMatch[1].replace(/,/g, ''), 10);
+    const totalMatch = raw.match(/Total tokens:\s+([\d,]+)/);
+    if (totalMatch) data.totalTokens = parseInt(totalMatch[1].replace(/,/g, ''), 10);
+    const costMatch = raw.match(/Est\.\s*cost:\s+(\$[\d,.]+)/);
+    if (costMatch) data.cost = costMatch[1];
+    const activeMatch = raw.match(/Active time:\s+(.+)/);
+    if (activeMatch) data.activeTime = activeMatch[1].trim();
+    const avgSessionMatch = raw.match(/Avg session:\s+(.+)/);
+    if (avgSessionMatch) data.avgSession = avgSessionMatch[1].trim();
+
+    // Models
+    const modelsSection = raw.match(/🤖 Models Used[\s\S]*?──+\n([\s\S]*?)(?=\n\s*📱|\n\s*🔧|\n\s*📅|\n\s*🏆|$)/);
+    if (modelsSection) {
+      const lines = modelsSection[1].trim().split('\n').filter(l => l.trim() && !l.includes('Model'));
+      data.models = lines.map(l => {
+        const parts = l.trim().split(/\s{2,}/);
+        return { name: parts[0]?.trim() || '', sessions: parts[1]?.trim() || '', tokens: parts[2]?.trim() || '', cost: parts[3]?.trim() || '' };
+      });
+    }
+
+    // Top tools
+    const toolsSection = raw.match(/🔧 Top Tools[\s\S]*?──+\n([\s\S]*?)(?=\n\s*📅|\n\s*🏆|$)/);
+    if (toolsSection) {
+      const lines = toolsSection[1].trim().split('\n').filter(l => l.trim() && !l.includes('Tool'));
+      data.topTools = lines.slice(0, 5).map(l => {
+        const parts = l.trim().split(/\s{2,}/);
+        return { name: parts[0]?.trim() || '', calls: parts[1]?.trim() || '', pct: parts[2]?.trim() || '' };
+      });
+    }
+  } catch {}
+  return data;
+}
+
 // Create agent (profile)
 app.post('/api/profiles/create', requireRole('admin'), async (req, res) => {
   try {
-    const { name, cloneFrom } = req.body || {};
+    const { name, cloneArg, cloneSource } = req.body || {};
     if (!name) return res.status(400).json({ ok: false, error: 'Profile name required' });
     const safeName = name.replace(/[^a-zA-Z0-9_-]/g, '');
-    const cloneArg = cloneFrom ? `--clone-from ${cloneFrom}` : '';
-    const output = await shell(`hermes profile create ${safeName} ${cloneArg} 2>&1`);
+    let cmd = `hermes profile create ${safeName}`;
+    if (cloneArg === '--clone') cmd += ' --clone';
+    else if (cloneArg === '--clone-from' && cloneSource) cmd += ` --clone-from ${cloneSource.replace(/[^a-zA-Z0-9_-]/g, '')}`;
+    const output = await shell(`${cmd} 2>&1`);
     audit(req.hciUser?.username || 'unknown', req.hciUser?.role || 'unknown', 'PROFILE_CREATE', safeName);
     addNotification('success', `Profile created: ${safeName}`);
     // Invalidate cache
