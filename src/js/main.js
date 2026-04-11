@@ -106,6 +106,7 @@ document.getElementById('login-form')?.addEventListener('submit', async (e) => {
     const data = await res.json();
     if (data.ok) {
       state.user = data.user;
+      state.csrfToken = data.csrfToken || '';
       errorEl.textContent = '';
       showApp();
     } else if (data.error === 'first_run') {
@@ -146,6 +147,7 @@ document.getElementById('setup-form')?.addEventListener('submit', async (e) => {
     const data = await res.json();
     if (data.ok) {
       state.user = data.user;
+      state.csrfToken = data.csrfToken || '';
       errorEl.textContent = '';
       showApp();
     } else {
@@ -358,7 +360,7 @@ async function setAgentDefault(name) {
     });
     loadAgents(document.querySelector('.page.active'));
   } catch (e) {
-    alert('Failed: ' + e.message);
+    customAlert(e.message, 'Error');
   }
 }
 
@@ -554,7 +556,7 @@ async function resumeSession(sessionId) {
 }
 
 async function renameSession(sessionId, currentTitle) {
-  const newTitle = prompt('New session title:', currentTitle);
+  const newTitle = await customPrompt('New session title:', currentTitle);
   if (newTitle === null || newTitle === currentTitle) return;
   try {
     const csrfToken = state.csrfToken || '';
@@ -590,7 +592,7 @@ async function exportSession(sessionId) {
 }
 
 async function deleteSession(sessionId, profileName) {
-  if (!confirm(`Delete session ${sessionId}?`)) return;
+  if (!await customConfirm(`Delete session ${sessionId}?`)) return;
   try {
     const csrfToken = state.csrfToken || '';
     await api(`/api/sessions/${sessionId}`, {
@@ -710,7 +712,7 @@ async function loadGatewayLogs(name) {
 }
 
 async function gatewayAction(profile, action) {
-  if (action === 'stop' && !confirm(`Stop gateway for ${profile}?`)) return;
+  if (action === 'stop' && !await customConfirm(`Stop gateway for ${profile}?`)) return;
   try {
     const csrfToken = state.csrfToken || '';
     const res = await api(`/api/gateway/${profile}/${action}`, {
@@ -1198,7 +1200,7 @@ async function runDump() {
 }
 
 async function runUpdate() {
-  if (!confirm('Update Hermes? This may take a minute.')) return;
+  if (!await customConfirm('Update Hermes? This may take a minute.')) return;
   const el = document.getElementById('update-result');
   el.innerHTML = '<div class="loading">Updating...</div>';
   try {
@@ -1214,12 +1216,12 @@ async function runUpdate() {
   }
 }
 
-function showCreateUser() {
-  const username = prompt('Username:');
+async function showCreateUser() {
+  const username = await customPrompt('Username:');
   if (!username) return;
-  const password = prompt('Password (min 8 chars):');
+  const password = await customPrompt('Password (min 8 chars):');
   if (!password) return;
-  const role = prompt('Role (admin/viewer):', 'viewer');
+  const role = await customPrompt('Role (admin/viewer):', 'viewer');
   if (!role) return;
   createUser(username, password, role);
 }
@@ -1423,6 +1425,77 @@ function init() {
 }
 
 // ============================================
+// Custom Modals (replace browser alert/confirm/prompt)
+// ============================================
+function showModal({ title, message, inputs = [], buttons = [] }) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.onclick = (e) => { if (e.target === overlay) { overlay.remove(); resolve(null); } };
+
+    let inputsHtml = inputs.map((inp, i) =>
+      `<input class="modal-input" id="modal-input-${i}" type="${inp.type || 'text'}" placeholder="${inp.placeholder || ''}" value="${inp.value || ''}" autocomplete="off" />`
+    ).join('');
+
+    let buttonsHtml = buttons.map((btn, i) =>
+      `<button class="btn ${btn.primary ? 'btn-primary' : 'btn-ghost'}" id="modal-btn-${i}">${btn.text}</button>`
+    ).join('');
+
+    overlay.innerHTML = `
+      <div class="modal-card">
+        <div class="modal-title">${title}</div>
+        ${message ? `<div class="modal-message">${message}</div>` : ''}
+        ${inputsHtml}
+        <div class="modal-actions">${buttonsHtml}</div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    // Focus first input
+    const firstInput = overlay.querySelector('.modal-input');
+    if (firstInput) setTimeout(() => firstInput.focus(), 50);
+
+    // Handle buttons
+    buttons.forEach((btn, i) => {
+      document.getElementById(`modal-btn-${i}`)?.addEventListener('click', () => {
+        const values = inputs.map((_, j) => document.getElementById(`modal-input-${j}`)?.value || '');
+        overlay.remove();
+        resolve(btn.value !== undefined ? btn.value : (inputs.length ? values : true));
+      });
+    });
+  });
+}
+
+async function customAlert(message, title = 'Notice') {
+  await showModal({ title, message, buttons: [{ text: 'OK', primary: true }] });
+}
+
+async function customConfirm(message, title = 'Confirm') {
+  const result = await showModal({
+    title,
+    message,
+    buttons: [
+      { text: 'Cancel', value: false },
+      { text: 'Confirm', primary: true, value: true },
+    ],
+  });
+  return result === true;
+}
+
+async function customPrompt(message, defaultValue = '', title = 'Input') {
+  const result = await showModal({
+    title,
+    message,
+    inputs: [{ placeholder: message, value: defaultValue }],
+    buttons: [
+      { text: 'Cancel', value: null },
+      { text: 'OK', primary: true },
+    ],
+  });
+  return result;
+}
+
+// ============================================
 // Export functions to window for onclick handlers
 // ============================================
 Object.assign(window, {
@@ -1455,6 +1528,10 @@ Object.assign(window, {
   loadAudit,
   showToast,
   escapeHtml,
+  customAlert,
+  customConfirm,
+  customPrompt,
+  showModal,
 });
 
 // Start

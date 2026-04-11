@@ -1069,7 +1069,9 @@ function verifyPassword(password) {
 app.get('/api/auth/me', (req, res) => {
   const user = getCurrentUser(req);
   if (!user) return res.status(401).json({ ok: false });
-  res.json({ ok: true, user: { username: user.username, role: user.role } });
+  const cookies = parseCookies(req);
+  const csrfToken = deriveCsrfToken(cookies[AUTH_COOKIE]);
+  res.json({ ok: true, user: { username: user.username, role: user.role }, csrfToken });
 });
 
 // Check if first run (no rate limit, no auth required)
@@ -1101,7 +1103,8 @@ app.post('/api/auth/setup', loginRateLimiter, (req, res) => {
   res.setHeader('Set-Cookie', `${AUTH_COOKIE}=${encodeURIComponent(authToken)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${24 * 60 * 60}; Secure`);
   audit(username, 'admin', 'SETUP', 'first-run admin created');
   addNotification('success', `Admin account created: ${username}`);
-  res.json({ ok: true, user: { username, role: 'admin' } });
+  const csrfToken = deriveCsrfToken(authToken);
+  res.json({ ok: true, user: { username, role: 'admin' }, csrfToken });
 });
 
 // Login (multi-user)
@@ -1127,7 +1130,8 @@ app.post('/api/auth/login', loginRateLimiter, (req, res) => {
   const authToken = createAuthToken(user.username, user.role);
   res.setHeader('Set-Cookie', `${AUTH_COOKIE}=${encodeURIComponent(authToken)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${24 * 60 * 60}; Secure`);
   audit(user.username, user.role, 'LOGIN', `success from ${ip}`);
-  res.json({ ok: true, user: { username: user.username, role: user.role } });
+  const csrfToken = deriveCsrfToken(authToken);
+  res.json({ ok: true, user: { username: user.username, role: user.role }, csrfToken });
 });
 
 // Logout
