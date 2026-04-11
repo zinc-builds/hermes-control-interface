@@ -717,22 +717,22 @@ async function getSessions() {
 
 let hermesAllSessionsCache = { at: 0, data: [] };
 
-async function getAllSessions() {
+async function getAllSessions(profile) {
   const now = Date.now();
-  if (hermesAllSessionsCache.data.length && now - hermesAllSessionsCache.at < 10_000) {
+  const cacheKey = profile || 'all';
+  if (hermesAllSessionsCache.data.length && now - hermesAllSessionsCache.at < 10_000 && hermesAllSessionsCache.key === cacheKey) {
     return hermesAllSessionsCache.data;
   }
-  const raw = await shell('hermes sessions list --limit 250');
+  const cmd = profile ? `hermes -p ${profile} sessions list --limit 250` : 'hermes sessions list --limit 250';
+  const raw = await shell(cmd);
   if (raw) {
     const data = parseHermesSessionsList(raw);
     if (data.length) {
-      hermesAllSessionsCache = { at: now, data };
+      hermesAllSessionsCache = { at: now, data, key: cacheKey };
       return data;
     }
   }
-  if (hermesAllSessionsCache.data.length) {
-    return hermesAllSessionsCache.data;
-  }
+  if (hermesAllSessionsCache.data.length) return hermesAllSessionsCache.data;
   return Array.from(sessions.entries()).map(([id, messages]) => ({
     id,
     title: 'local chat',
@@ -1268,8 +1268,9 @@ app.get('/api/sessions', requireAuth, (req, res) => {
 });
 
 app.get('/api/all-sessions', requireAuth, async (req, res) => {
-  // Full list for agent panel — limit 250, cached 10s
-  const data = await getAllSessions();
+  // Sessions list — can filter by profile
+  const profile = req.query.profile;
+  const data = await getAllSessions(profile);
   res.json({ ok: true, sessions: data, cachedAt: hermesAllSessionsCache.at });
 });
 

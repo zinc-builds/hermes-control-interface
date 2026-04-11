@@ -524,7 +524,7 @@ async function loadAgentSessions(container, name) {
   loadSessionStats(name);
 
   try {
-    const res = await api('/api/all-sessions');
+    const res = await api(`/api/all-sessions?profile=${encodeURIComponent(name)}`);
     const tableEl = document.getElementById('sessions-table');
 
     if (!res.ok || !res.sessions || res.sessions.length === 0) {
@@ -637,23 +637,106 @@ async function loadSessionStats(name) {
 async function resumeSession(sessionId) {
   const agent = state.currentAgent || 'david';
   const cmd = `hermes -p ${agent} -r ${sessionId}`;
-  await showModal({
-    title: 'Resume Session',
-    message: `Run this command in your terminal to resume:\n\n${cmd}`,
-    buttons: [
-      { text: 'Close', value: null },
-      { text: 'Copy Command', primary: true, value: 'copy' },
-    ],
-  }).then(async (result) => {
-    if (result?.action === 'copy') {
-      try {
-        await navigator.clipboard.writeText(cmd);
-        showToast('Command copied!', 'success');
-      } catch {
-        showToast('Copy failed — manually copy the command', 'error');
-      }
-    }
+  openTerminalPanel(`Resume: ${sessionId}`, cmd);
+}
+
+function openTerminalPanel(title, command) {
+  // Remove existing panel
+  document.querySelector('.terminal-panel')?.remove();
+
+  const panel = document.createElement('div');
+  panel.className = 'terminal-panel';
+  panel.innerHTML = `
+    <div class="terminal-header">
+      <span class="terminal-title">${escapeHtml(title)}</span>
+      <span class="terminal-close" onclick="document.getElementById('main').style.bottom='0'; this.closest('.terminal-panel').remove()">×</span>
+    </div>
+    <div class="terminal-body" id="terminal-body"></div>
+  `;
+  document.body.appendChild(panel);
+
+  // Adjust main content
+  document.getElementById('main').style.bottom = '45vh';
+
+  // Load xterm and connect
+  loadXtermAndConnect(command);
+}
+
+async function loadXtermAndConnect(command) {
+  const bodyEl = document.getElementById('terminal-body');
+  if (!bodyEl) return;
+
+  // Load xterm CSS
+  if (!document.querySelector('link[href*="xterm"]')) {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = '/vendor/xterm/css/xterm.css';
+    document.head.appendChild(link);
+  }
+
+  // Load xterm JS dynamically
+  const loadScript = (src) => new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) return resolve();
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = resolve;
+    s.onerror = reject;
+    document.head.appendChild(s);
   });
+
+  try {
+    await loadScript('/vendor/xterm/lib/xterm.js');
+    await loadScript('/vendor/xterm-addon-fit/lib/xterm-addon-fit.js');
+
+    const term = new Terminal({
+      cursorBlink: true,
+      fontSize: 13,
+      fontFamily: "'JetBrains Mono', monospace",
+      theme: {
+        background: '#000000',
+        foreground: '#ffe6cb',
+        cursor: '#ffe6cb',
+        selectionBackground: 'rgba(255, 230, 203, 0.3)',
+      },
+    });
+
+    const fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(bodyEl);
+    fitAddon.fit();
+
+    // Connect WebSocket
+    const ws = new WebSocket(`wss://${location.host}/ws`);
+    ws.onopen = () => {
+      // Send command
+      ws.send(JSON.stringify({ type: 'input', data: command + '\r' }));
+    };
+    ws.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'terminal-output' && msg.chunk) {
+          term.write(msg.chunk);
+        }
+      } catch {}
+    };
+    ws.onclose = () => {
+      term.write('\r\n[Connection closed]');
+    };
+
+    // Send user input
+    term.onData((data) => {
+      ws.send(JSON.stringify({ type: 'input', data }));
+    });
+
+    // Resize
+    window.addEventListener('resize', () => {
+      fitAddon.fit();
+      ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+    });
+
+  } catch (e) {
+    bodyEl.innerHTML = `<div style="color:var(--red);padding:20px;">Failed to load terminal: ${e.message}</div>`;
+  }
 }
 
 async function renameSession(sessionId, currentTitle) {
@@ -1331,14 +1414,13 @@ async function runUpdate() {
 async function showCreateAgent() {
   const result = await showModal({
     title: 'Create Agent',
-    message: 'Create a new Hermes profile. Name must be lowercase alphanumeric.',
+    message: 'Create a new Hermes profile.',
     inputs: [
       { placeholder: 'Agent name (e.g. worker, analyst)', type: 'text' },
     ],
     buttons: [
       { text: 'Cancel', value: null },
       { text: 'Create Fresh', primary: true, value: 'fresh' },
-      { text: 'Clone Active', value: 'clone' },
       { text: 'Clone From...', value: 'clone_from' },
     ],
   });
@@ -1354,9 +1436,7 @@ async function showCreateAgent() {
 
   let body = { name: safeName };
 
-  if (result.action === 'clone') {
-    body.cloneArg = '--clone';
-  } else if (result.action === 'clone_from') {
+  if (result.action === 'clone_from') {
     const sourceResult = await showModal({
       title: 'Clone From',
       message: 'Enter profile name to clone from:',
@@ -1721,6 +1801,7 @@ Object.assign(window, {
   loadMaintenance,
   setAgentDefault,
   resumeSession,
+  openTerminalPanel,
   renameSession,
   exportSession,
   deleteSession,
