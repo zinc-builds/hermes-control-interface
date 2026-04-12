@@ -37,6 +37,16 @@ function updateThemeIcon() {
 // ============================================
 async function checkAuth() {
   try {
+    // First check auth status (no 401 — public endpoint)
+    const statusRes = await fetch('/api/auth/status');
+    const statusData = await statusRes.json();
+
+    if (statusData.first_run) {
+      showSetup();
+      return false;
+    }
+
+    // If not first run, try authenticated endpoint
     const res = await fetch('/api/auth/me', { credentials: 'include' });
     if (res.ok) {
       const data = await res.json();
@@ -44,16 +54,6 @@ async function checkAuth() {
       state.csrfToken = data.csrfToken;
       showApp();
       return true;
-    }
-  } catch {}
-
-  // Check if first run (no rate limit)
-  try {
-    const statusRes = await fetch('/api/auth/status');
-    const statusData = await statusRes.json();
-    if (statusData.first_run) {
-      showSetup();
-      return false;
     }
   } catch {}
 
@@ -240,11 +240,12 @@ async function loadHome(container) {
     </div>
   `;
 
-  // Fetch system health + profiles in parallel
+  // Fetch system health + profiles + agent status in parallel
   try {
-    const [healthRes, profilesRes] = await Promise.all([
+    const [healthRes, profilesRes, agentRes] = await Promise.all([
       api('/api/system/health'),
       api('/api/profiles'),
+      api('/api/agent/status'),
     ]);
 
     // System Health card
@@ -264,10 +265,12 @@ async function loadHome(container) {
           <div class="stat-row"><span class="stat-label">Sessions</span><span class="stat-value">${healthRes.sessions || 0}</span></div>
         </div>
         <div class="card">
-          <div class="card-title">Services</div>
-          <div class="stat-row"><span class="stat-label">Nginx</span><span class="stat-value status-ok">● active</span></div>
-          <div class="stat-row"><span class="stat-label">Fail2ban</span><span class="stat-value status-ok">● active</span></div>
-          <div class="stat-row"><span class="stat-label">Docker</span><span class="stat-value status-ok">● active</span></div>
+          <div class="card-title">Agent</div>
+          <div class="stat-row"><span class="stat-label">Model</span><span class="stat-value">${agentRes.ok ? (agentRes.model || 'N/A') : 'N/A'}</span></div>
+          <div class="stat-row"><span class="stat-label">Provider</span><span class="stat-value">${agentRes.ok ? (agentRes.provider || 'N/A') : 'N/A'}</span></div>
+          <div class="stat-row"><span class="stat-label">Gateway</span><span class="stat-value ${agentRes.ok && agentRes.gatewayStatus?.includes('running') ? 'status-ok' : 'status-off'}">● ${agentRes.ok ? (agentRes.gatewayStatus || 'unknown') : 'N/A'}</span></div>
+          <div class="stat-row"><span class="stat-label">API Keys</span><span class="stat-value">${agentRes.ok ? `${agentRes.apiKeys?.active || 0}/${agentRes.apiKeys?.total || 0} active` : 'N/A'}</span></div>
+          <div class="stat-row"><span class="stat-label">Platforms</span><span class="stat-value">${agentRes.ok ? (agentRes.platforms?.filter(p => p.configured).map(p => p.name).join(', ') || 'none') : 'N/A'}</span></div>
         </div>
       `;
     }
@@ -748,13 +751,14 @@ async function loadXtermAndConnect(command) {
 
     ws.onopen = () => {
       term.write('Connected.\r\n');
-      // Send command after short delay
+      // Send command after delay (wait for PTY ready)
       setTimeout(() => {
-        if (command) {
+        if (command && !commandSent) {
+          term.write(`\x1b[90m$ ${command}\x1b[0m\r\n`);
           ws.send(JSON.stringify({ type: 'terminal-input', data: command + '\r' }));
           commandSent = true;
         }
-      }, 300);
+      }, 800);
     };
 
     ws.onmessage = (e) => {
@@ -1279,9 +1283,9 @@ async function loadSkills(container) {
             ${items.map(s => `
               <div class="card">
                 <div class="card-title">${s.name || 'Unknown'}</div>
-                <div style="font-size:11px;color:var(--fg-muted);margin-top:4px;">${s.description || 'No description'}</div>
-                <div style="margin-top:8px;display:flex;gap:8px;">
-                  ${s.enabled ? '<span class="badge status-ok">enabled</span>' : '<span class="badge status-off">disabled</span>'}
+                <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+                  ${s.source ? `<span class="badge" style="font-size:10px;">${s.source}</span>` : ''}
+                  ${s.trust ? `<span class="badge" style="font-size:10px;opacity:0.7;">${s.trust}</span>` : ''}
                 </div>
               </div>
             `).join('')}

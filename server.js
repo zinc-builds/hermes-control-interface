@@ -1289,6 +1289,68 @@ app.get('/api/system/health', requireAuth, async (req, res) => {
   }
 });
 
+// Hermes agent status (parsed from `hermes status`)
+app.get('/api/agent/status', requireAuth, async (req, res) => {
+  try {
+    const raw = await shell('hermes status 2>&1', '15s');
+    const grab = (label) => {
+      const re = new RegExp(label + ':\\s+(.+)');
+      const m = raw.match(re);
+      return m ? m[1].trim() : '';
+    };
+    // Parse key fields
+    const model = grab('Model');
+    const provider = grab('Provider');
+    const gatewayStatus = grab('Status');
+    const activeSessions = grab('Active');
+
+    // Parse API keys (lines with ✓ or ✗)
+    const keyLines = raw.match(/◆ API Keys\n([\s\S]*?)(?:\n◆|\n──)/);
+    const apiKeys = { active: 0, total: 0 };
+    if (keyLines) {
+      const kLines = keyLines[1].split('\n').filter(l => l.trim());
+      apiKeys.total = kLines.length;
+      apiKeys.active = kLines.filter(l => l.includes('✓')).length;
+    }
+
+    // Parse platforms (lines with ✓ or ✗ after "Messaging Platforms")
+    const platLines = raw.match(/◆ Messaging Platforms\n([\s\S]*?)(?:\n◆|\n──)/);
+    const platforms = [];
+    if (platLines) {
+      for (const l of platLines[1].split('\n')) {
+        const m = l.match(/^\s+(\S.+?)\s+(✓|✗)\s+(.+)/);
+        if (m) platforms.push({ name: m[1].trim(), configured: m[2] === '✓', detail: m[3].trim() });
+      }
+    }
+
+    // Parse auth providers
+    const authLines = raw.match(/◆ Auth Providers\n([\s\S]*?)(?:\n◆|\n──)/);
+    const authProviders = [];
+    if (authLines) {
+      for (const l of authLines[1].split('\n')) {
+        const m = l.match(/^\s+(\S.+?)\s+(✓|✗)\s+(.+)/);
+        if (m) authProviders.push({ name: m[1].trim(), loggedIn: m[2] === '✓', detail: m[3].trim() });
+      }
+    }
+
+    // Parse scheduled jobs
+    const jobs = grab('Jobs');
+
+    res.json({
+      ok: true,
+      model, provider,
+      gatewayStatus,
+      activeSessions: parseInt(activeSessions) || 0,
+      scheduledJobs: parseInt(jobs) || 0,
+      apiKeys,
+      platforms,
+      authProviders,
+    });
+  } catch (e) {
+    res.json({ ok: false, error: e.message });
+  }
+});
+
 app.get('/api/dashboard-state', requireAuth, async (req, res) => {
   res.json(await buildDashboardState(true));
 });
@@ -1723,16 +1785,20 @@ app.get('/api/auth/providers', requireRole('admin'), async (req, res) => {
 app.get('/api/skills', requireAuth, async (req, res) => {
   try {
     const raw = await shell('hermes skills list 2>&1');
-    const lines = raw.split('\n').filter(l => l.trim() && !l.startsWith('─') && !l.startsWith('Skill'));
+    const lines = raw.split('\n');
     const skills = [];
     for (const line of lines) {
-      const parts = line.trim().split(/\s{2,}/);
-      if (parts.length >= 1) {
+      // Only parse data rows that start with │
+      if (!line.trim().startsWith('│')) continue;
+      // Split by │ and clean each cell
+      const cells = line.split('│').map(c => c.trim()).filter((c, i) => i > 0);
+      if (cells.length >= 2 && cells[0]) {
         skills.push({
-          name: parts[0]?.replace(/[│◆]/g, '').trim() || '',
-          category: parts[1]?.trim() || 'uncategorized',
-          description: parts[2]?.trim() || '',
-          enabled: !line.includes('disabled'),
+          name: cells[0] || '',
+          category: cells[1] || 'uncategorized',
+          source: cells[2] || '',
+          trust: cells[3] || '',
+          enabled: true,
         });
       }
     }
