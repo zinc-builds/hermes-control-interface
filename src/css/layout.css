@@ -430,3 +430,47 @@
 .topbar {
   box-shadow: 0 1px 20px rgba(0, 0, 0, 0.3);
 }
+
+/* Nav toggle (hamburger) */
+.nav-toggle {
+  display: none;
+  font-size: 18px;
+  padding: 4px 8px;
+  background: none;
+  border: none;
+  color: var(--fg);
+  cursor: pointer;
+  line-height: 1;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .nav-toggle { display: flex; }
+  .brand-sub { display: none; }
+  .topbar-nav {
+    display: none;
+    position: absolute;
+    top: 56px;
+    left: 0;
+    right: 0;
+    background: var(--bg-base);
+    border-bottom: 1px solid var(--border);
+    flex-direction: column;
+    padding: 8px;
+    z-index: 99;
+  }
+  .topbar-nav.mobile-open { display: flex; }
+  .nav-link { padding: 12px 16px; }
+  .topbar-right { gap: 4px; }
+  #main { padding: 16px; }
+  .notif-dropdown { right: 8px; left: 8px; width: auto; min-width: 0; }
+  .modal-card { width: auto; margin: 16px; }
+  .login-card { width: auto; margin: 16px; padding: 24px; }
+}
+
+@media (max-width: 480px) {
+  #topbar { padding: 0 10px; }
+  .brand { font-size: 14px; }
+  #main { padding: 12px; }
+  .user-role { display: none; }
+}

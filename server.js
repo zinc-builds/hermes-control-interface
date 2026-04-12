@@ -765,6 +765,37 @@ function getSystem() {
   };
 }
 
+// Group 11: System health alert checks (throttled — max 1 alert per type per hour)
+const healthAlertCooldown = {};
+function checkSystemHealth() {
+  const sys = getSystem();
+  const now = Date.now();
+  // Disk > 90%
+  if (sys.disk && sys.disk.percent > 90) {
+    const key = 'disk-high';
+    if (!healthAlertCooldown[key] || now - healthAlertCooldown[key] > 3600000) {
+      addNotification('error', `Disk usage critical: ${sys.disk.percent}% — clean up now`);
+      healthAlertCooldown[key] = now;
+    }
+  }
+  // RAM > 90%
+  if (sys.memory.percent > 90) {
+    const key = 'ram-high';
+    if (!healthAlertCooldown[key] || now - healthAlertCooldown[key] > 3600000) {
+      addNotification('warning', `RAM usage high: ${sys.memory.percent}% — watch for OOM kills`);
+      healthAlertCooldown[key] = now;
+    }
+  }
+  // Load > 2x CPU cores
+  if (sys.load[0] > sys.cpuCores * 2) {
+    const key = 'load-high';
+    if (!healthAlertCooldown[key] || now - healthAlertCooldown[key] > 3600000) {
+      addNotification('warning', `CPU load spike: ${sys.load[0].toFixed(1)} (${sys.cpuCores} cores)`);
+      healthAlertCooldown[key] = now;
+    }
+  }
+}
+
 function parseHermesInsights(raw) {
   const text = String(raw || '');
   const grab = (label) => {
@@ -947,6 +978,7 @@ function buildSpriteState() {
 }
 
 async function buildDashboardState(authed = false) {
+  if (authed) checkSystemHealth();
   const terminal = ensureTerminalSession();
   const [sessionsData, allSessionsData, cronJobsData, insightsData, knowledgeData, profilesData] = await Promise.all([
     getSessions(),

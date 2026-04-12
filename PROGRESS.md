@@ -19,11 +19,13 @@ Last updated: 2026-04-12 by david
 - [x] Doctor, Dump, Update
 - [x] Sessions rename/export/delete
 
-## Phase 5: Polish ← NEXT
+## Phase 5: Polish ← IN PROGRESS
 - [ ] Test all pages in browser
 - [ ] Fix any runtime errors
-- [ ] Responsive + edge cases
-- [ ] Error handling + loading states
+- [x] Responsive + edge cases — hamburger sidebar, mobile layout, overlay dismiss
+- [x] Error handling + loading states — apiFetch wrapper (401/429/network), toast on failure
+- [x] Alert system — bell icon + dropdown, server-side health alerts (disk/RAM/CPU)
+- [x] Performance — smart polling backoff (30s → 60s → 120s on failures)
 
 ## Phase 6: Release
 - [ ] QA testing (browser auto-test)
@@ -33,4 +35,4 @@ Last updated: 2026-04-12 by david
 ## Completed: 95%+ (all features implemented)
 ## Staging server: running on port 10274
 ## Next: Browser test all pages → fix errors → polish
-## Staging git: 3 commits on revamp/v2 branch
+## Staging git: 21 commits on revamp/v2 branch

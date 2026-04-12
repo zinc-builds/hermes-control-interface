@@ -9,6 +9,7 @@ const state = {
   theme: localStorage.getItem('hci-theme') || 'dark',
   notifications: [],
   notifInterval: null,
+  notifFailCount: 0,
 };
 
 // ============================================
@@ -1623,9 +1624,16 @@ async function fetchNotifications() {
     const res = await api('/api/notifications');
     if (res.ok && res.notifications) {
       state.notifications = res.notifications;
+      state.notifFailCount = 0;
       updateNotifBadge();
+    } else if (res.error === 'network' || res.error === 'rate-limited') {
+      state.notifFailCount = (state.notifFailCount || 0) + 1;
+      if (state.notifFailCount === 3 || state.notifFailCount === 6) startNotifPolling();
     }
-  } catch {}
+  } catch {
+    state.notifFailCount = (state.notifFailCount || 0) + 1;
+    if (state.notifFailCount === 3 || state.notifFailCount === 6) startNotifPolling();
+  }
 }
 
 function updateNotifBadge() {
@@ -1642,22 +1650,38 @@ function updateNotifBadge() {
 function startNotifPolling() {
   if (state.notifInterval) clearInterval(state.notifInterval);
   fetchNotifications();
-  state.notifInterval = setInterval(fetchNotifications, 30000);
+  const failCount = state.notifFailCount || 0;
+  const interval = failCount >= 6 ? 120000 : failCount >= 3 ? 60000 : 30000;
+  state.notifInterval = setInterval(fetchNotifications, interval);
 }
 
 // ============================================
 // API Helper
 // ============================================
 async function api(url, options = {}) {
-  const res = await fetch(url, {
-    credentials: 'include',
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
-  });
-  return res.json();
+  try {
+    const res = await fetch(url, {
+      credentials: 'include',
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+    });
+    if (res.status === 401) {
+      showToast('Session expired — please log in again', 'error');
+      setLocked(true);
+      return { ok: false, error: 'unauthorized' };
+    }
+    if (res.status === 429) {
+      showToast('Rate limited — slow down', 'warning');
+      return { ok: false, error: 'rate-limited' };
+    }
+    return res.json();
+  } catch (err) {
+    showToast('Network error — check connection', 'error');
+    return { ok: false, error: 'network' };
+  }
 }
 
 // ============================================
@@ -1697,7 +1721,14 @@ function init() {
     link.addEventListener('click', (e) => {
       e.preventDefault();
       navigate(link.dataset.page);
+      // Close mobile nav after click
+      document.getElementById('nav')?.classList.remove('mobile-open');
     });
+  });
+
+  // Mobile nav toggle
+  document.getElementById('nav-toggle')?.addEventListener('click', () => {
+    document.getElementById('nav')?.classList.toggle('mobile-open');
   });
 
   // User menu
