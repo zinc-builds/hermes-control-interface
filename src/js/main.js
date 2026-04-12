@@ -561,11 +561,12 @@ async function loadAgentSessions(container, name) {
 
     if (!res.ok || !res.sessions || res.sessions.length === 0) {
       tableEl.innerHTML = '<div class="card"><div class="card-title">No sessions found</div></div>';
+      state.currentSessions = [];
       return;
     }
 
-    // Filter by profile if sessions have profile info, otherwise show all
     const sessions = res.sessions;
+    state.currentSessions = sessions;
 
     function renderSessions(filter = '') {
       const filtered = filter
@@ -834,9 +835,9 @@ async function loadXtermAndConnect(command) {
 }
 
 async function renameSession(sessionId, profileName) {
-  // Find current title from the session row in the table
-  const row = document.querySelector(`[onclick*="${sessionId}"]`)?.closest('tr');
-  const currentTitle = row?.querySelector('td:first-child')?.textContent?.trim() || '';
+  // Find current title from stored sessions
+  const session = (state.currentSessions || []).find(s => s.id === sessionId);
+  const currentTitle = session?.title || '';
   const newTitle = await customPrompt('New session title:', currentTitle);
   if (newTitle === null || newTitle === currentTitle) return;
   try {

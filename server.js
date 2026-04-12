@@ -757,18 +757,11 @@ async function getAllSessions(profile) {
   const raw = await shell(cmd);
   if (raw) {
     const data = parseHermesSessionsList(raw);
-    if (data.length) {
-      hermesAllSessionsCache = { at: now, data, key: cacheKey };
-      return data;
-    }
+    hermesAllSessionsCache = { at: now, data, key: cacheKey };
+    return data;
   }
-  if (hermesAllSessionsCache.data.length) return hermesAllSessionsCache.data;
-  return Array.from(sessions.entries()).map(([id, messages]) => ({
-    id,
-    title: 'local chat',
-    preview: messages.at(-1)?.content?.slice(0, 90) || 'quiet',
-    lastActive: 'now',
-  }));
+  // No fallback to old cache — return empty if command returned nothing
+  return [];
 }
 
 function getSystem() {
