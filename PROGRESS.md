@@ -58,8 +58,20 @@ Commits: 17 (lokal, belum push)
 - [x] File Explorer path — strip leading / and .. from paths
 - [x] Uptime — added to /api/system/health response
 
-## Phase 6: Release
-- [ ] QA testing (browser auto-test)
+## Phase 6: Release ← IN PROGRESS
+- [x] QA testing (browser auto-test) — all 7 pages + file explorer + agent detail (6 tabs)
+  - Login: ✅ no errors
+  - Home: ✅ all 4 cards loading with real data
+  - Agents: ✅ list, create, delete, set default
+  - Agent Detail: ✅ all 6 tabs (Dashboard, Sessions, Gateway, Config, Memory, Cron)
+  - Usage: ✅ filters work, models/platforms/tools breakdown
+  - Skills: ✅ list with categories and source badges
+  - Maintenance: ✅ Doctor, Dump, Update, Users, Auth, Audit
+  - File Explorer: ✅ split view, read, save
+  - Terminal: ✅ WebSocket, touch controls, fullscreen
+  - Notifications: ✅ bell, badge, dropdown
+  - Theme: ✅ dark/light toggle
+  - Console errors: ✅ zero errors on all pages
 - [ ] Sync staging → prod
 - [ ] Major version commit + GitHub release (v3.0.0)
 
