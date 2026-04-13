@@ -728,7 +728,7 @@ async function loadXtermAndConnect(command) {
 
   try {
     await loadScript('/vendor/xterm/lib/xterm.js');
-    await loadScript('/vendor/xterm-addon-fit/lib/xterm-addon-fit.js');
+    await loadScript('/vendor/xterm-addon-fit/lib/addon-fit.js');
 
     const term = new Terminal({
       cursorBlink: true,
